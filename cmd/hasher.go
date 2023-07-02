@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 
@@ -8,15 +9,28 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "Usage: hasher PASSWORD")
-		os.Exit(1)
-	}
-	password := os.Args[1]
+	scanner := bufio.NewScanner(os.Stdin)
 
+	for scanner.Scan() {
+		password := scanner.Text()
+		if len(password) == 0 {
+			break
+		}
+
+		hash, err := hash(password)
+		if err != nil {
+			fmt.Printf("Error generating hash: %s\n", err)
+		} else {
+			fmt.Printf("%s: %s\n", password, hash)
+		}
+	}
+}
+
+func hash(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error generating hash: %s", err)
+		return "", err
+	} else {
+		return string(hash), nil
 	}
-	fmt.Println(string(hash))
 }

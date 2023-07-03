@@ -1,7 +1,7 @@
 module github.com/decke/smtprelay
 
 require (
-	github.com/chrj/smtpd v0.3.1
+	github.com/chrj/smtpd v0.3.2-0.20220930165137-006a4f9d6d5b
 	github.com/google/uuid v1.3.0
 	github.com/peterbourgon/ff/v3 v3.3.2
 	github.com/sirupsen/logrus v1.9.3

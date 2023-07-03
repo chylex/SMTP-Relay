@@ -320,10 +320,9 @@ var testHookStartTLS func(*tls.Config) // nil, except for tests
 // attachments (see the mime/multipart package), or other mail
 // functionality. Higher-level packages exist outside of the standard
 // library.
-func SendMail(r *Remote, from string, to []string, msg []byte) error {
-	if r.Sender != "" {
-		from = r.Sender
-	}
+func SendMail(account *Account, from string, to []string, msg []byte) error {
+	remote := account.Remote
+	auth := LoginAuth(remote.Username, remote.Password)
 
 	if err := validateLine(from); err != nil {
 		return err
@@ -335,17 +334,17 @@ func SendMail(r *Remote, from string, to []string, msg []byte) error {
 	}
 	var c *Client
 	var err error
-	if r.Scheme == "smtps" {
+	if remote.Scheme == "smtps" {
 		config := &tls.Config{
-			ServerName:         r.Hostname,
-			InsecureSkipVerify: r.SkipVerify,
+			ServerName:         remote.Hostname,
+			InsecureSkipVerify: false,
 		}
-		conn, err := tls.Dial("tcp", r.Addr, config)
+		conn, err := tls.Dial("tcp", remote.Addr, config)
 		if err != nil {
 			return err
 		}
 		defer conn.Close()
-		c, err = NewClient(conn, r.Hostname)
+		c, err = NewClient(conn, remote.Hostname)
 		if err != nil {
 			return err
 		}
@@ -353,7 +352,7 @@ func SendMail(r *Remote, from string, to []string, msg []byte) error {
 			return err
 		}
 	} else {
-		c, err = Dial(r.Addr)
+		c, err = Dial(remote.Addr)
 		if err != nil {
 			return err
 		}
@@ -364,7 +363,7 @@ func SendMail(r *Remote, from string, to []string, msg []byte) error {
 		if ok, _ := c.Extension("STARTTLS"); ok {
 			config := &tls.Config{
 				ServerName:         c.serverName,
-				InsecureSkipVerify: r.SkipVerify,
+				InsecureSkipVerify: false,
 			}
 			if testHookStartTLS != nil {
 				testHookStartTLS(config)
@@ -372,17 +371,18 @@ func SendMail(r *Remote, from string, to []string, msg []byte) error {
 			if err = c.StartTLS(config); err != nil {
 				return err
 			}
-		} else if r.Scheme == "starttls" {
+		} else if remote.Scheme == "starttls" {
 			return errors.New("starttls: server does not support extension, check remote scheme")
 		}
 	}
-	if r.Auth != nil && c.ext != nil {
-		if _, ok := c.ext["AUTH"]; !ok {
-			return errors.New("smtp: server doesn't support AUTH")
-		}
-		if err = c.Auth(r.Auth); err != nil {
-			return err
-		}
+	if c.ext == nil {
+		return errors.New("smtp: server doesn't support AUTH")
+	}
+	if _, ok := c.ext["AUTH"]; !ok {
+		return errors.New("smtp: server doesn't support AUTH")
+	}
+	if err = c.Auth(auth); err != nil {
+		return err
 	}
 	if err = c.Mail(from); err != nil {
 		return err

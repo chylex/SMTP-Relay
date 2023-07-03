@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"net"
 	"net/textproto"
 	"os"
@@ -82,26 +83,21 @@ func addrAllowed(addr string, allowedAddrs []string) bool {
 }
 
 func senderChecker(peer smtpd.Peer, addr string) error {
-	// check sender address from auth file if user is authenticated
-	if localAuthRequired() && peer.Username != "" {
-		user, err := AuthFetch(peer.Username)
-		if err != nil {
-			// Shouldn't happen: authChecker already validated username+password
-			log.WithFields(logrus.Fields{
-				"peer":     peer.Addr,
-				"username": peer.Username,
-			}).WithError(err).Warn("could not fetch auth user")
-			return smtpd.Error{Code: 451, Message: "Bad sender address"}
-		}
+	account, ok := accounts[peer.Username]
+	if !ok {
+		// Shouldn't happen: authChecker already validated username+password
+		log.WithFields(logrus.Fields{
+			"username": peer.Username,
+		}).Warn("could not find account")
+		return smtpd.Error{Code: 451, Message: "Bad sender address"}
+	}
 
-		if !addrAllowed(addr, user.allowedAddresses) {
-			log.WithFields(logrus.Fields{
-				"peer":           peer.Addr,
-				"username":       peer.Username,
-				"sender_address": addr,
-			}).Warn("sender address not allowed for authenticated user")
-			return smtpd.Error{Code: 451, Message: "Bad sender address"}
-		}
+	if !addrAllowed(addr, account.AllowedFrom) {
+		log.WithFields(logrus.Fields{
+			"username":       peer.Username,
+			"sender_address": addr,
+		}).Warn("sender address not allowed for authenticated user")
+		return smtpd.Error{Code: 451, Message: "Bad sender address"}
 	}
 
 	if allowedSender == nil {
@@ -116,7 +112,6 @@ func senderChecker(peer smtpd.Peer, addr string) error {
 
 	log.WithFields(logrus.Fields{
 		"sender_address": addr,
-		"peer":           peer.Addr,
 	}).Warn("sender address not allowed by allowed_sender pattern")
 	return smtpd.Error{Code: 451, Message: "Bad sender address"}
 }
@@ -133,21 +128,27 @@ func recipientChecker(peer smtpd.Peer, addr string) error {
 	}
 
 	log.WithFields(logrus.Fields{
-		"peer":              peer.Addr,
 		"recipient_address": addr,
 	}).Warn("recipient address not allowed by allowed_recipients pattern")
 	return smtpd.Error{Code: 451, Message: "Bad recipient address"}
 }
 
 func authChecker(peer smtpd.Peer, username string, password string) error {
-	err := AuthCheckPassword(username, password)
-	if err != nil {
+	account, ok := accounts[username]
+	if !ok {
 		log.WithFields(logrus.Fields{
-			"peer":     peer.Addr,
 			"username": username,
-		}).WithError(err).Warn("auth error")
+		}).Warn("could not find account")
 		return smtpd.Error{Code: 535, Message: "Authentication credentials invalid"}
 	}
+
+	if bcrypt.CompareHashAndPassword(account.PasswordHash, []byte(password)) != nil {
+		log.WithFields(logrus.Fields{
+			"username": username,
+		}).Warn("invalid password")
+		return smtpd.Error{Code: 535, Message: "Authentication credentials invalid"}
+	}
+
 	return nil
 }
 
@@ -158,16 +159,11 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 	}
 
 	logger := log.WithFields(logrus.Fields{
-		"from": env.Sender,
-		"to":   env.Recipients,
-		"peer": peerIP,
-		"uuid": generateUUID(),
+		"account": peer.Username,
+		"from":    env.Sender,
+		"to":      env.Recipients,
+		"uuid":    generateUUID(),
 	})
-
-	if *remotesStr == "" && *command == "" {
-		logger.Warning("no remote_host or command set; discarding mail")
-		return nil
-	}
 
 	env.AddReceivedLine(peer)
 
@@ -183,7 +179,7 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 		environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_PEER", peerIP))
 
 		cmd := exec.Cmd{
-			Env: environ,
+			Env:  environ,
 			Path: *command,
 		}
 
@@ -200,39 +196,43 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 		cmdLogger.Info("pipe command successful: " + stdout.String())
 	}
 
-	for _, remote := range remotes {
-		logger = logger.WithField("host", remote.Addr)
-		logger.Info("delivering mail from peer using smarthost")
+	account, ok := accounts[peer.Username]
+	if !ok {
+		logger.Warning("invalid user", peer.Username)
+		return nil
+	}
 
-		err := SendMail(
-			remote,
-			env.Sender,
-			env.Recipients,
-			env.Data,
-		)
-		if err != nil {
-			var smtpError smtpd.Error
+	logger = logger.WithField("host", account.Remote.Addr)
+	logger.Info("delivering mail from peer using smarthost")
 
-			switch err := err.(type) {
-			case *textproto.Error:
-				smtpError = smtpd.Error{Code: err.Code, Message: err.Msg}
+	err := SendMail(
+		&account,
+		env.Sender,
+		env.Recipients,
+		env.Data,
+	)
+	if err != nil {
+		var smtpError smtpd.Error
 
-				logger.WithFields(logrus.Fields{
-					"err_code": err.Code,
-					"err_msg":  err.Msg,
-				}).Error("delivery failed")
-			default:
-				smtpError = smtpd.Error{Code: 554, Message: "Forwarding failed"}
+		switch err := err.(type) {
+		case *textproto.Error:
+			smtpError = smtpd.Error{Code: err.Code, Message: err.Msg}
 
-				logger.WithError(err).
-					Error("delivery failed")
-			}
+			logger.WithFields(logrus.Fields{
+				"err_code": err.Code,
+				"err_msg":  err.Msg,
+			}).Error("delivery failed")
+		default:
+			smtpError = smtpd.Error{Code: 554, Message: "Forwarding failed"}
 
-			return smtpError
+			logger.WithError(err).
+				Error("delivery failed")
 		}
 
-		logger.Debug("delivery successful")
+		return smtpError
 	}
+
+	logger.Debug("delivery successful")
 
 	return nil
 }
@@ -295,13 +295,11 @@ func main() {
 		Debug("starting smtprelay")
 
 	// Load allowed users file
-	if localAuthRequired() {
-		err := AuthLoadFile(*allowedUsers)
-		if err != nil {
-			log.WithField("file", *allowedUsers).
-				WithError(err).
-				Fatal("cannot load allowed users file")
-		}
+	err := ReadAccountsFromFile(*accountFile)
+	if err != nil {
+		log.WithField("file", *accountFile).
+			WithError(err).
+			Fatal("cannot load account file")
 	}
 
 	var servers []*smtpd.Server
@@ -322,11 +320,8 @@ func main() {
 			ConnectionChecker: connectionChecker,
 			SenderChecker:     senderChecker,
 			RecipientChecker:  recipientChecker,
+			Authenticator:     authChecker,
 			Handler:           mailHandler,
-		}
-
-		if localAuthRequired() {
-			server.Authenticator = authChecker
 		}
 
 		var lsnr net.Listener

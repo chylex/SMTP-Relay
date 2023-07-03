@@ -42,9 +42,8 @@ var (
 	allowedNetsStr   = flagset.String("allowed_nets", "127.0.0.0/8 ::1/128", "Networks allowed to send mails")
 	allowedSenderStr = flagset.String("allowed_sender", "", "Regular expression for valid FROM EMail addresses")
 	allowedRecipStr  = flagset.String("allowed_recipients", "", "Regular expression for valid TO EMail addresses")
-	allowedUsers     = flagset.String("allowed_users", "", "Path to file with valid users/passwords")
+	accountFile      = flagset.String("account_file", "", "Path to file with user accounts")
 	command          = flagset.String("command", "", "Path to pipe command")
-	remotesStr       = flagset.String("remotes", "", "Outgoing SMTP servers")
 
 	// additional flags
 	_           = flagset.String("config", "", "Path to config file (ini format)")
@@ -58,11 +57,12 @@ var (
 	allowedNets       = []*net.IPNet{}
 	allowedSender     *regexp.Regexp
 	allowedRecipients *regexp.Regexp
-	remotes           = []*Remote{}
 )
 
-func localAuthRequired() bool {
-	return *allowedUsers != ""
+// Split a string and ignore empty results
+// https://stackoverflow.com/a/46798310/119527
+func splitstr(s string, sep rune) []string {
+	return strings.FieldsFunc(s, func(c rune) bool { return c == sep })
 }
 
 func setupAllowedNetworks() {
@@ -109,21 +109,6 @@ func setupAllowedPatterns() {
 	}
 }
 
-func setupRemotes() {
-	logger := log.WithField("remotes", *remotesStr)
-
-	if *remotesStr != "" {
-		for _, remoteURL := range strings.Split(*remotesStr, " ") {
-			r, err := ParseRemote(remoteURL)
-			if err != nil {
-				logger.Fatal(fmt.Sprintf("error parsing url: '%s': %v", remoteURL, err))
-			}
-
-			remotes = append(remotes, r)
-		}
-	}
-}
-
 type protoAddr struct {
 	protocol string
 	address  string
@@ -146,10 +131,9 @@ func setupListeners() {
 	for _, listenAddr := range strings.Split(*listenStr, " ") {
 		pa := splitProto(listenAddr)
 
-		if localAuthRequired() && pa.protocol == "" {
+		if pa.protocol == "" {
 			log.WithField("address", pa.address).
-				Fatal("Local authentication (via allowed_users file) " +
-					"not allowed with non-TLS listener")
+				Fatal("Local authentication not allowed with non-TLS listener")
 		}
 
 		listenAddrs = append(listenAddrs, pa)
@@ -224,13 +208,8 @@ func ConfigLoad() {
 		os.Exit(0)
 	}
 
-	if *remotesStr == "" && *command == "" {
-		log.Warn("no remotes or command set; mail will not be forwarded!")
-	}
-
 	setupAllowedNetworks()
 	setupAllowedPatterns()
-	setupRemotes()
 	setupListeners()
 	setupTimeouts()
 }

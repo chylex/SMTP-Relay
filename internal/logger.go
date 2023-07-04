@@ -1,4 +1,4 @@
-package main
+package smtprelay
 
 import (
 	"fmt"
@@ -31,18 +31,24 @@ func setupLogger() {
 	// Handle log_format
 	switch *logFormat {
 	case "json":
-		log.SetFormatter(&logrus.JSONFormatter{
-			TimestampFormat:   time.RFC3339Nano,
-			DisableHTMLEscape: true,
-		})
+		log.SetFormatter(
+			&logrus.JSONFormatter{
+				TimestampFormat:   time.RFC3339Nano,
+				DisableHTMLEscape: true,
+			},
+		)
 	case "plain":
-		log.SetFormatter(&logrus.TextFormatter{
-			DisableTimestamp: true,
-		})
+		log.SetFormatter(
+			&logrus.TextFormatter{
+				DisableTimestamp: true,
+			},
+		)
 	case "", "default":
-		log.SetFormatter(&logrus.TextFormatter{
-			FullTimestamp: true,
-		})
+		log.SetFormatter(
+			&logrus.TextFormatter{
+				FullTimestamp: true,
+			},
+		)
 	default:
 		fmt.Fprintf(os.Stderr, "Invalid log_format: %s\n", *logFormat)
 		os.Exit(1)

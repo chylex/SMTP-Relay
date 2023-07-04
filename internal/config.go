@@ -1,4 +1,4 @@
-package main
+package smtprelay
 
 import (
 	"bufio"
@@ -77,10 +77,12 @@ func setupAllowedNetworks() {
 		// Reject any network specification where any host bits are set,
 		// meaning the address refers to a host and not a network.
 		if !allowedNet.IP.Equal(baseIP) {
-			log.WithFields(logrus.Fields{
-				"given_net":  netstr,
-				"proper_net": allowedNet,
-			}).Fatal("Invalid network in allowed_nets (host bits set)")
+			log.WithFields(
+				logrus.Fields{
+					"given_net":  netstr,
+					"proper_net": allowedNet,
+				},
+			).Fatal("Invalid network in allowed_nets (host bits set)")
 		}
 
 		allowedNets = append(allowedNets, allowedNet)
@@ -180,7 +182,8 @@ func setupTimeouts() {
 func ConfigLoad() {
 	// use .env file if it exists
 	if _, err := os.Stat(".env"); err == nil {
-		if err := ff.Parse(flagset, os.Args[1:],
+		if err := ff.Parse(
+			flagset, os.Args[1:],
 			ff.WithEnvVarPrefix("smtprelay"),
 			ff.WithConfigFile(".env"),
 			ff.WithConfigFileParser(ff.EnvParser),
@@ -190,7 +193,8 @@ func ConfigLoad() {
 		}
 	} else {
 		// use env variables and smtprelay.ini file
-		if err := ff.Parse(flagset, os.Args[1:],
+		if err := ff.Parse(
+			flagset, os.Args[1:],
 			ff.WithEnvVarPrefix("smtprelay"),
 			ff.WithConfigFileFlag("config"),
 			ff.WithConfigFileParser(IniParser),

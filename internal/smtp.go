@@ -15,7 +15,7 @@
 // Some external packages provide more functionality. See:
 //
 //	https://godoc.org/?q=smtp
-package main
+package smtprelay
 
 import (
 	"crypto/tls"

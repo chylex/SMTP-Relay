@@ -3,7 +3,7 @@ ARG GOARCH="amd64"
 
 COPY . /build_dir
 WORKDIR /build_dir
-RUN go build -v .
+RUN go build -v ./cmd/smtprelay
 
 FROM debian:stable-slim
 

@@ -16,9 +16,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
+	"smtprelay/internal/config"
+	"smtprelay/internal/logger"
 )
 
 var (
+	cfg *config.Config
 	log *logrus.Logger
 )
 
@@ -26,12 +29,12 @@ func connectionChecker(peer smtpd.Peer) error {
 	// This can't panic because we only have TCP listeners
 	peerIP := peer.Addr.(*net.TCPAddr).IP
 
-	if len(allowedNets) == 0 {
+	if len(cfg.AllowedNets) == 0 {
 		// Special case: empty string means allow everything
 		return nil
 	}
 
-	for _, allowedNet := range allowedNets {
+	for _, allowedNet := range cfg.AllowedNets {
 		if allowedNet.Contains(peerIP) {
 			return nil
 		}
@@ -89,7 +92,7 @@ func addrAllowed(addr string, allowedAddrs []string) bool {
 }
 
 func senderChecker(peer smtpd.Peer, addr string) error {
-	account, ok := accounts[peer.Username]
+	account, ok := cfg.Accounts[peer.Username]
 	if !ok {
 		// Shouldn't happen: authChecker already validated username+password
 		log.WithFields(
@@ -110,12 +113,12 @@ func senderChecker(peer smtpd.Peer, addr string) error {
 		return smtpd.Error{Code: 451, Message: "Bad sender address"}
 	}
 
-	if allowedSender == nil {
+	if cfg.AllowedSender == nil {
 		// Any sender is permitted
 		return nil
 	}
 
-	if allowedSender.MatchString(addr) {
+	if cfg.AllowedSender.MatchString(addr) {
 		// Permitted by regex
 		return nil
 	}
@@ -129,12 +132,12 @@ func senderChecker(peer smtpd.Peer, addr string) error {
 }
 
 func recipientChecker(peer smtpd.Peer, addr string) error {
-	if allowedRecipients == nil {
+	if cfg.AllowedRecipients == nil {
 		// Any recipient is permitted
 		return nil
 	}
 
-	if allowedRecipients.MatchString(addr) {
+	if cfg.AllowedRecipients.MatchString(addr) {
 		// Permitted by regex
 		return nil
 	}
@@ -148,7 +151,7 @@ func recipientChecker(peer smtpd.Peer, addr string) error {
 }
 
 func authChecker(peer smtpd.Peer, username string, password string) error {
-	account, ok := accounts[username]
+	account, ok := cfg.Accounts[username]
 	if !ok {
 		log.WithFields(
 			logrus.Fields{
@@ -187,8 +190,8 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 
 	env.AddReceivedLine(peer)
 
-	if *command != "" {
-		cmdLogger := logger.WithField("command", *command)
+	if *cfg.Command != "" {
+		cmdLogger := logger.WithField("command", *cfg.Command)
 
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
@@ -200,7 +203,7 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 
 		cmd := exec.Cmd{
 			Env:  environ,
-			Path: *command,
+			Path: *cfg.Command,
 		}
 
 		cmd.Stdin = bytes.NewReader(env.Data)
@@ -216,7 +219,7 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 		cmdLogger.Info("pipe command successful: " + stdout.String())
 	}
 
-	account, ok := accounts[peer.Username]
+	account, ok := cfg.Accounts[peer.Username]
 	if !ok {
 		logger.Warning("invalid user", peer.Username)
 		return nil
@@ -289,16 +292,16 @@ func getTLSConfig() *tls.Config {
 		tls.TLS_RSA_WITH_AES_256_GCM_SHA384, // does not provide PFS
 	}
 
-	if *localCert == "" || *localKey == "" {
+	if *cfg.LocalCert == "" || *cfg.LocalKey == "" {
 		log.WithFields(
 			logrus.Fields{
-				"cert_file": *localCert,
-				"key_file":  *localKey,
+				"cert_file": *cfg.LocalCert,
+				"key_file":  *cfg.LocalKey,
 			},
 		).Fatal("TLS certificate/key file not defined in config")
 	}
 
-	cert, err := tls.LoadX509KeyPair(*localCert, *localKey)
+	cert, err := tls.LoadX509KeyPair(*cfg.LocalCert, *cfg.LocalKey)
 	if err != nil {
 		log.WithField("error", err).
 			Fatal("cannot load X509 keypair")
@@ -313,34 +316,26 @@ func getTLSConfig() *tls.Config {
 }
 
 func Run() {
-	ConfigLoad()
+	cfg = config.Load()
+	log = logger.SetupLogger(cfg.LogFile, *cfg.LogLevel, *cfg.LogFormat)
 
-	log.WithField("version", appVersion).
-		Debug("starting smtprelay")
-
-	// Load allowed users file
-	err := ReadAccountsFromFile(*accountFile)
-	if err != nil {
-		log.WithField("file", *accountFile).
-			WithError(err).
-			Fatal("cannot load account file")
-	}
+	log.Debug("starting smtprelay")
 
 	var servers []*smtpd.Server
 
 	// Create a server for each desired listen address
-	for _, listen := range listenAddrs {
-		logger := log.WithField("address", listen.address)
+	for _, listen := range cfg.ListenAddrs {
+		logger := log.WithField("address", listen.Address)
 
 		server := &smtpd.Server{
-			Hostname:          *hostName,
-			WelcomeMessage:    *welcomeMsg,
-			ReadTimeout:       readTimeout,
-			WriteTimeout:      writeTimeout,
-			DataTimeout:       dataTimeout,
-			MaxConnections:    *maxConnections,
-			MaxMessageSize:    *maxMessageSize,
-			MaxRecipients:     *maxRecipients,
+			Hostname:          *cfg.Hostname,
+			WelcomeMessage:    *cfg.WelcomeMsg,
+			ReadTimeout:       cfg.ReadTimeout,
+			WriteTimeout:      cfg.WriteTimeout,
+			DataTimeout:       cfg.DataTimeout,
+			MaxConnections:    *cfg.MaxConnections,
+			MaxMessageSize:    *cfg.MaxMessageSize,
+			MaxRecipients:     *cfg.MaxRecipients,
 			ConnectionChecker: connectionChecker,
 			SenderChecker:     senderChecker,
 			RecipientChecker:  recipientChecker,
@@ -351,26 +346,26 @@ func Run() {
 		var lsnr net.Listener
 		var err error
 
-		switch listen.protocol {
+		switch listen.Protocol {
 		case "":
 			logger.Info("listening on address")
-			lsnr, err = net.Listen("tcp", listen.address)
+			lsnr, err = net.Listen("tcp", listen.Address)
 
 		case "starttls":
 			server.TLSConfig = getTLSConfig()
-			server.ForceTLS = *localForceTLS
+			server.ForceTLS = cfg.LocalForceTLS
 
 			logger.Info("listening on address (STARTTLS)")
-			lsnr, err = net.Listen("tcp", listen.address)
+			lsnr, err = net.Listen("tcp", listen.Address)
 
 		case "tls":
 			server.TLSConfig = getTLSConfig()
 
 			logger.Info("listening on address (TLS)")
-			lsnr, err = tls.Listen("tcp", listen.address, server.TLSConfig)
+			lsnr, err = tls.Listen("tcp", listen.Address, server.TLSConfig)
 
 		default:
-			logger.WithField("protocol", listen.protocol).
+			logger.WithField("protocol", listen.Protocol).
 				Fatal("unknown protocol in listen address")
 		}
 

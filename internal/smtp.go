@@ -27,6 +27,8 @@ import (
 	"net/smtp"
 	"net/textproto"
 	"strings"
+
+	"smtprelay/internal/config"
 )
 
 // A Client represents a client connection to an SMTP server.
@@ -69,7 +71,7 @@ func NewClient(conn net.Conn, host string) (*Client, error) {
 		text.Close()
 		return nil, err
 	}
-	c := &Client{Text: text, conn: conn, serverName: host, localName: *hostName}
+	c := &Client{Text: text, conn: conn, serverName: host, localName: *cfg.Hostname}
 	_, c.tls = conn.(*tls.Conn)
 	return c, nil
 }
@@ -320,7 +322,7 @@ var testHookStartTLS func(*tls.Config) // nil, except for tests
 // attachments (see the mime/multipart package), or other mail
 // functionality. Higher-level packages exist outside of the standard
 // library.
-func SendMail(account *Account, from string, to []string, msg []byte) error {
+func SendMail(account *config.Account, from string, to []string, msg []byte) error {
 	remote := account.Remote
 	auth := LoginAuth(remote.Username, remote.Password)
 
@@ -335,11 +337,11 @@ func SendMail(account *Account, from string, to []string, msg []byte) error {
 	var c *Client
 	var err error
 	if remote.Scheme == "smtps" {
-		config := &tls.Config{
+		tlsConfig := &tls.Config{
 			ServerName:         remote.Hostname,
 			InsecureSkipVerify: false,
 		}
-		conn, err := tls.Dial("tcp", remote.Addr, config)
+		conn, err := tls.Dial("tcp", remote.Addr, tlsConfig)
 		if err != nil {
 			return err
 		}
@@ -361,14 +363,14 @@ func SendMail(account *Account, from string, to []string, msg []byte) error {
 			return err
 		}
 		if ok, _ := c.Extension("STARTTLS"); ok {
-			config := &tls.Config{
+			tlsConfig := &tls.Config{
 				ServerName:         c.serverName,
 				InsecureSkipVerify: false,
 			}
 			if testHookStartTLS != nil {
-				testHookStartTLS(config)
+				testHookStartTLS(tlsConfig)
 			}
-			if err = c.StartTLS(config); err != nil {
+			if err = c.StartTLS(tlsConfig); err != nil {
 				return err
 			}
 		} else if remote.Scheme == "starttls" {

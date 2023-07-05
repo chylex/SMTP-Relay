@@ -1,4 +1,4 @@
-package smtprelay
+package config
 
 import (
 	"encoding/json"
@@ -32,32 +32,28 @@ type AccountJson struct {
 	AllowedFrom       []string `json:"allowedFrom"`
 }
 
-var (
-	accounts map[string]Account
-)
-
-func ReadAccountsFromFile(filePath string) error {
+func ReadAccountsFromFile(filePath string) (map[string]Account, error) {
 	contents, err := os.ReadFile(filePath)
 	if err != nil {
-		return err
+		return nil, err
 	} else {
 		return ReadAccounts(contents)
 	}
 }
 
-func ReadAccounts(data []byte) error {
+func ReadAccounts(data []byte) (map[string]Account, error) {
 	var accountList []AccountJson
 
 	err := json.Unmarshal(data, &accountList)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	accounts = make(map[string]Account)
+	accounts := make(map[string]Account)
 	for _, account := range accountList {
-		remote, err := ParseRemote(account.RemoteHostname, account.RemoteUsername, account.RemotePassword)
+		remote, err := parseRemote(account.RemoteHostname, account.RemoteUsername, account.RemotePassword)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		accounts[account.LocalUsername] = Account{
@@ -68,15 +64,15 @@ func ReadAccounts(data []byte) error {
 		}
 	}
 
-	return nil
+	return accounts, nil
 }
 
-// ParseRemote creates a remote from a given url in the following format:
+// parseRemote creates a remote from a given url in the following format:
 //
 // smtp://[host][:port]
 // smtps://[host][:port]
 // starttls://[host][:port]
-func ParseRemote(remoteURL string, username string, password string) (*Remote, error) {
+func parseRemote(remoteURL string, username string, password string) (*Remote, error) {
 	u, err := url.Parse(remoteURL)
 	if err != nil {
 		return nil, err

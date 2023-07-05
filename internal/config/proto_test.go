@@ -1,4 +1,4 @@
-package smtprelay
+package config
 
 import (
 	"testing"
@@ -32,16 +32,16 @@ func TestSplitProto(t *testing.T) {
 		t.Run(
 			testName, func(t *testing.T) {
 				pa := splitProto(test.input)
-				if pa.protocol != test.proto {
+				if pa.Protocol != test.proto {
 					t.Errorf(
 						"Testcase %d: Incorrect proto: expected %v, got %v",
-						i, test.proto, pa.protocol,
+						i, test.proto, pa.Protocol,
 					)
 				}
-				if pa.address != test.addr {
+				if pa.Address != test.addr {
 					t.Errorf(
 						"Testcase %d: Incorrect addr: expected %v, got %v",
-						i, test.addr, pa.address,
+						i, test.addr, pa.Address,
 					)
 				}
 			},

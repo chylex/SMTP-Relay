@@ -12,11 +12,14 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/chrj/smtpd"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	log *logrus.Logger
 )
 
 func connectionChecker(peer smtpd.Peer) error {

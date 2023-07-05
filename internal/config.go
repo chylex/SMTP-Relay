@@ -13,6 +13,7 @@ import (
 
 	"github.com/peterbourgon/ff/v3"
 	"github.com/sirupsen/logrus"
+	"smtprelay/internal/logger"
 )
 
 var (
@@ -205,7 +206,7 @@ func ConfigLoad() {
 	}
 
 	// Set up logging as soon as possible
-	setupLogger()
+	log = logger.SetupLogger(logFile, *logLevel, *logFormat)
 
 	if *versionInfo {
 		fmt.Printf("smtprelay/%s (%s)\n", appVersion, buildTime)

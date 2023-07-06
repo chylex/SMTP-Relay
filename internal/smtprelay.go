@@ -316,7 +316,12 @@ func getTLSConfig() *tls.Config {
 }
 
 func Run() {
-	cfg = config.Load()
+	if len(os.Args) != 2 {
+		fmt.Println("Usage: smtprelay <config_file>")
+		os.Exit(1)
+	}
+
+	cfg = config.Load(os.Args[1])
 	log = logger.SetupLogger(cfg.LogFile, *cfg.LogLevel, *cfg.LogFormat)
 
 	log.Debug("starting smtprelay")

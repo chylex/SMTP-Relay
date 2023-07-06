@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/peterbourgon/ff/v3"
 )
 
 type Config struct {
@@ -64,25 +62,20 @@ var (
 	_ = flagset.String("config", "", "Path to config file (ini format)")
 )
 
-func Load() *Config {
-	// use .env file if it exists
-	if _, err := os.Stat(".env"); err == nil {
-		err := ff.Parse(
-			flagset, os.Args[1:],
-			ff.WithEnvVarPrefix("smtprelay"),
-			ff.WithConfigFile(".env"),
-			ff.WithConfigFileParser(ff.EnvParser),
-		)
-		handleInvalidConfiguration(err)
-	} else {
-		// use env variables and smtprelay.ini file
-		err := ff.Parse(
-			flagset, os.Args[1:],
-			ff.WithEnvVarPrefix("smtprelay"),
-			ff.WithConfigFileFlag("config"),
-			ff.WithConfigFileParser(IniParser),
-		)
-		handleInvalidConfiguration(err)
+func Load(configFile string) *Config {
+	reader, err := os.Open(configFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not open configuration file: %s\n", configFile)
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+
+	err = IniParser(reader, flagset.Set)
+	_ = reader.Close()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not parse configuration file: %s\n", configFile)
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
 	}
 
 	allowedNets, err := parseAllowedNetworks(*allowedNetsStr)

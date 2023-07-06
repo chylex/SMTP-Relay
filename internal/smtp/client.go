@@ -15,7 +15,7 @@
 // Some external packages provide more functionality. See:
 //
 //	https://godoc.org/?q=smtp
-package smtprelay
+package smtp
 
 import (
 	"crypto/tls"
@@ -53,25 +53,25 @@ type Client struct {
 
 // Dial returns a new Client connected to an SMTP server at addr.
 // The addr must include a port, as in "mail.example.com:smtp".
-func Dial(addr string) (*Client, error) {
+func Dial(addr string, localName string) (*Client, error) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
 	host, _, _ := net.SplitHostPort(addr)
-	return NewClient(conn, host)
+	return NewClient(conn, host, localName)
 }
 
 // NewClient returns a new Client using an existing connection and host as a
 // server name to be used when authenticating.
-func NewClient(conn net.Conn, host string) (*Client, error) {
+func NewClient(conn net.Conn, host string, localName string) (*Client, error) {
 	text := textproto.NewConn(conn)
 	_, _, err := text.ReadResponse(220)
 	if err != nil {
 		text.Close()
 		return nil, err
 	}
-	c := &Client{Text: text, conn: conn, serverName: host, localName: *cfg.Hostname}
+	c := &Client{Text: text, conn: conn, serverName: host, localName: localName}
 	_, c.tls = conn.(*tls.Conn)
 	return c, nil
 }
@@ -202,7 +202,7 @@ func (c *Client) Auth(a smtp.Auth) error {
 		return err
 	}
 	encoding := base64.StdEncoding
-	mech, resp, err := a.Start(&smtp.ServerInfo{c.serverName, c.tls, c.auth})
+	mech, resp, err := a.Start(&smtp.ServerInfo{Name: c.serverName, TLS: c.tls, Auth: c.auth})
 	if err != nil {
 		c.Quit()
 		return err
@@ -254,10 +254,10 @@ func (c *Client) Mail(from string) error {
 	}
 	cmdStr := "MAIL FROM:<%s>"
 	if c.ext != nil {
-		if _, ok := c.ext["8BITMIME"]; ok {
+		if containsKey(c.ext, "8BITMIME") {
 			cmdStr += " BODY=8BITMIME"
 		}
-		if _, ok := c.ext["SMTPUTF8"]; ok {
+		if containsKey(c.ext, "SMTPUTF8") {
 			cmdStr += " SMTPUTF8"
 		}
 	}
@@ -322,8 +322,7 @@ var testHookStartTLS func(*tls.Config) // nil, except for tests
 // attachments (see the mime/multipart package), or other mail
 // functionality. Higher-level packages exist outside of the standard
 // library.
-func SendMail(account *config.Account, from string, to []string, msg []byte) error {
-	remote := account.Remote
+func SendMail(remote *config.Remote, localName string, from string, to []string, msg []byte) error {
 	auth := LoginAuth(remote.Username, remote.Password)
 
 	if err := validateLine(from); err != nil {
@@ -346,7 +345,7 @@ func SendMail(account *config.Account, from string, to []string, msg []byte) err
 			return err
 		}
 		defer conn.Close()
-		c, err = NewClient(conn, remote.Hostname)
+		c, err = NewClient(conn, remote.Hostname, localName)
 		if err != nil {
 			return err
 		}
@@ -354,7 +353,7 @@ func SendMail(account *config.Account, from string, to []string, msg []byte) err
 			return err
 		}
 	} else {
-		c, err = Dial(remote.Addr)
+		c, err = Dial(remote.Addr, localName)
 		if err != nil {
 			return err
 		}
@@ -377,10 +376,7 @@ func SendMail(account *config.Account, from string, to []string, msg []byte) err
 			return errors.New("starttls: server does not support extension, check remote scheme")
 		}
 	}
-	if c.ext == nil {
-		return errors.New("smtp: server doesn't support AUTH")
-	}
-	if _, ok := c.ext["AUTH"]; !ok {
+	if c.ext == nil || !containsKey(c.ext, "AUTH") {
 		return errors.New("smtp: server doesn't support AUTH")
 	}
 	if err = c.Auth(auth); err != nil {
@@ -407,6 +403,11 @@ func SendMail(account *config.Account, from string, to []string, msg []byte) err
 		return err
 	}
 	return c.Quit()
+}
+
+func containsKey[K comparable, V any](m map[K]V, key K) bool {
+	_, ok := m[key]
+	return ok
 }
 
 // Extension reports whether an extension is support by the server.
@@ -457,37 +458,10 @@ func (c *Client) Quit() error {
 	return c.Text.Close()
 }
 
-// validateLine checks to see if a line has CR or LF as per RFC 5321
+// validateLine checks to see if a line has CR or LF as per RFC 5321.
 func validateLine(line string) error {
 	if strings.ContainsAny(line, "\n\r") {
 		return errors.New("smtp: A line must not contain CR or LF")
 	}
 	return nil
-}
-
-// LOGIN authentication
-type loginAuth struct {
-	username, password string
-}
-
-func LoginAuth(username, password string) smtp.Auth {
-	return &loginAuth{username, password}
-}
-
-func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
-	return "LOGIN", []byte{}, nil
-}
-
-func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
-	if more {
-		switch string(fromServer) {
-		case "Username:":
-			return []byte(a.username), nil
-		case "Password:":
-			return []byte(a.password), nil
-		default:
-			return nil, errors.New("Unknown fromServer")
-		}
-	}
-	return nil, nil
 }

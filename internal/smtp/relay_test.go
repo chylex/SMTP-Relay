@@ -1,4 +1,4 @@
-package smtprelay
+package smtp
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 
 func TestAddrAllowedNoDomain(t *testing.T) {
 	allowedAddrs := []string{"joe@abc.com"}
-	if addrAllowed("bob.com", allowedAddrs) {
+	if addressAllowedByTemplate(allowedAddrs, "bob.com") {
 		t.FailNow()
 	}
 }
@@ -14,10 +14,10 @@ func TestAddrAllowedNoDomain(t *testing.T) {
 func TestAddrAllowedSingle(t *testing.T) {
 	allowedAddrs := []string{"joe@abc.com"}
 
-	if !addrAllowed("joe@abc.com", allowedAddrs) {
+	if !addressAllowedByTemplate(allowedAddrs, "joe@abc.com") {
 		t.FailNow()
 	}
-	if addrAllowed("bob@abc.com", allowedAddrs) {
+	if addressAllowedByTemplate(allowedAddrs, "bob@abc.com") {
 		t.FailNow()
 	}
 }
@@ -31,7 +31,7 @@ func TestAddrAllowedDifferentCase(t *testing.T) {
 		"JOE@ABC.COM",
 	}
 	for _, addr := range testAddrs {
-		if !addrAllowed(addr, allowedAddrs) {
+		if !addressAllowedByTemplate(allowedAddrs, addr) {
 			t.Errorf("Address %v not allowed, but should be", addr)
 		}
 	}
@@ -40,55 +40,55 @@ func TestAddrAllowedDifferentCase(t *testing.T) {
 func TestAddrAllowedLocal(t *testing.T) {
 	allowedAddrs := []string{"joe"}
 
-	if !addrAllowed("joe", allowedAddrs) {
+	if !addressAllowedByTemplate(allowedAddrs, "joe") {
 		t.FailNow()
 	}
-	if addrAllowed("bob", allowedAddrs) {
+	if addressAllowedByTemplate(allowedAddrs, "bob") {
 		t.FailNow()
 	}
 }
 
 func TestAddrAllowedMulti(t *testing.T) {
 	allowedAddrs := []string{"joe@abc.com", "bob@def.com"}
-	if !addrAllowed("joe@abc.com", allowedAddrs) {
+	if !addressAllowedByTemplate(allowedAddrs, "joe@abc.com") {
 		t.FailNow()
 	}
-	if !addrAllowed("bob@def.com", allowedAddrs) {
+	if !addressAllowedByTemplate(allowedAddrs, "bob@def.com") {
 		t.FailNow()
 	}
-	if addrAllowed("bob@abc.com", allowedAddrs) {
+	if addressAllowedByTemplate(allowedAddrs, "bob@abc.com") {
 		t.FailNow()
 	}
 }
 
 func TestAddrAllowedSingleDomain(t *testing.T) {
 	allowedAddrs := []string{"@abc.com"}
-	if !addrAllowed("joe@abc.com", allowedAddrs) {
+	if !addressAllowedByTemplate(allowedAddrs, "joe@abc.com") {
 		t.FailNow()
 	}
-	if addrAllowed("joe@def.com", allowedAddrs) {
+	if addressAllowedByTemplate(allowedAddrs, "joe@def.com") {
 		t.FailNow()
 	}
 }
 
 func TestAddrAllowedMixed(t *testing.T) {
 	allowedAddrs := []string{"app", "app@example.com", "@appsrv.example.com"}
-	if !addrAllowed("app", allowedAddrs) {
+	if !addressAllowedByTemplate(allowedAddrs, "app") {
 		t.FailNow()
 	}
-	if !addrAllowed("app@example.com", allowedAddrs) {
+	if !addressAllowedByTemplate(allowedAddrs, "app@example.com") {
 		t.FailNow()
 	}
-	if addrAllowed("ceo@example.com", allowedAddrs) {
+	if addressAllowedByTemplate(allowedAddrs, "ceo@example.com") {
 		t.FailNow()
 	}
-	if !addrAllowed("root@appsrv.example.com", allowedAddrs) {
+	if !addressAllowedByTemplate(allowedAddrs, "root@appsrv.example.com") {
 		t.FailNow()
 	}
-	if !addrAllowed("dev@appsrv.example.com", allowedAddrs) {
+	if !addressAllowedByTemplate(allowedAddrs, "dev@appsrv.example.com") {
 		t.FailNow()
 	}
-	if addrAllowed("appsrv@example.com", allowedAddrs) {
+	if addressAllowedByTemplate(allowedAddrs, "appsrv@example.com") {
 		t.FailNow()
 	}
 }

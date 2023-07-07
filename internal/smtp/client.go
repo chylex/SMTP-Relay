@@ -405,11 +405,6 @@ func SendMail(remote *config.Remote, localName string, from string, to []string,
 	return c.Quit()
 }
 
-func containsKey[K comparable, V any](m map[K]V, key K) bool {
-	_, ok := m[key]
-	return ok
-}
-
 // Extension reports whether an extension is support by the server.
 // The extension name is case-insensitive. If the extension is supported,
 // Extension also returns a string that contains any parameters the

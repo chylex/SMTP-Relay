@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/chrj/smtpd"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 	"smtprelay/internal/config"
@@ -239,18 +238,16 @@ func addressAllowedByTemplate(allowedAddresses []string, addr string) bool {
 			if allowedAddr == addr {
 				return true
 			}
+		} else if idx != 0 {
+			// 2. email address (user@domain.com) -- must match exactly
+			if allowedAddr == addr {
+				return true
+			}
 		} else {
-			if idx != 0 {
-				// 2. email address (user@domain.com) -- must match exactly
-				if allowedAddr == addr {
-					return true
-				}
-			} else {
-				// 3. domain (@domain.com) -- must match addr domain
-				allowedDomain := allowedAddr[idx+1:]
-				if allowedDomain == domain {
-					return true
-				}
+			// 3. domain (@domain.com) -- must match addr domain
+			allowedDomain := allowedAddr[idx+1:]
+			if allowedDomain == domain {
+				return true
 			}
 		}
 	}
@@ -259,28 +256,6 @@ func addressAllowedByTemplate(allowedAddresses []string, addr string) bool {
 }
 
 func addressAllowedByRegex(allowedRegex *regexp.Regexp, addr string) bool {
-	if allowedRegex == nil {
-		// Any address is permitted
-		return true
-	}
-
-	if allowedRegex.MatchString(addr) {
-		// Permitted by regex
-		return true
-	}
-
-	return false
-}
-
-func generateUUID(log *logrus.Logger) string {
-	uniqueID, err := uuid.NewRandom()
-
-	if err != nil {
-		log.WithError(err).
-			Error("could not generate UUIDv4")
-
-		return ""
-	}
-
-	return uniqueID.String()
+	// If not set, allow all addresses
+	return allowedRegex == nil || allowedRegex.MatchString(addr)
 }

@@ -33,18 +33,18 @@ type AccountJson struct {
 }
 
 func ReadAccountsFromFile(filePath string) (map[string]Account, error) {
-	contents, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	} else {
-		return ReadAccounts(contents)
-	}
-}
-
-func ReadAccounts(data []byte) (map[string]Account, error) {
 	var accountList []AccountJson
 
-	err := json.Unmarshal(data, &accountList)
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+
+	err = decoder.Decode(&accountList)
+	_ = file.Close()
 	if err != nil {
 		return nil, err
 	}

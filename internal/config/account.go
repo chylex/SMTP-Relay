@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 
 	"gopkg.in/yaml.v3"
 )
@@ -27,8 +28,12 @@ type Remote struct {
 	Password string `yaml:"password"`
 }
 
+//goland:noinspection IdentifierGrammar
 type Rules struct {
-	AllowedFrom []string `yaml:"allowed_from"`
+	AllowedSendersPattern    string         `yaml:"allowed_senders"`
+	AllowedSendersRegex      *regexp.Regexp `yaml:"-"`
+	AllowedRecipientsPattern string         `yaml:"allowed_recipients"`
+	AllowedRecipientsRegex   *regexp.Regexp `yaml:"-"`
 }
 
 func ReadAccountsFromFile(filePath string) (map[string]Account, error) {
@@ -120,8 +125,32 @@ func validateProtocolAndGetDefaultPort(protocol string) (uint16, error) {
 }
 
 func validateAndProcessRules(rules *Rules) error {
-	if len(rules.AllowedFrom) == 0 {
-		return fmt.Errorf("rule allowed_from must not be empty")
+	regex, err := parseRegex("allowed_senders", rules.AllowedSendersPattern)
+	if err != nil {
+		return err
+	} else {
+		rules.AllowedSendersRegex = regex
 	}
+
+	regex, err = parseRegex("allowed_recipients", rules.AllowedRecipientsPattern)
+	if err != nil {
+		return err
+	} else {
+		rules.AllowedRecipientsRegex = regex
+	}
+
 	return nil
+}
+
+func parseRegex(key string, pattern string) (*regexp.Regexp, error) {
+	if pattern == "" {
+		return nil, nil
+	}
+
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex in %s: %s\nError: %w", key, pattern, err)
+	} else {
+		return regex, nil
+	}
 }

@@ -38,10 +38,7 @@ func authChecker(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, u
 	return func(peer smtpd.Peer, username string, password string) error {
 		account, ok := cfg.Accounts[username]
 		if !ok {
-			log.WithField("username", username).
-				Warn("could not find account")
-
-			return smtpd.Error{Code: 535, Message: "Authentication credentials invalid"}
+			return missingAccountError(log, username)
 		}
 
 		if bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(password)) != nil {
@@ -53,6 +50,13 @@ func authChecker(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, u
 
 		return nil
 	}
+}
+
+func missingAccountError(log *logrus.Logger, username string) error {
+	log.WithField("username", username).
+		Warn("could not find account")
+
+	return smtpd.Error{Code: 535, Message: "Authentication credentials invalid"}
 }
 
 func connectionChecker(cfg *config.Config, log *logrus.Logger) func(smtpd.Peer) error {
@@ -83,23 +87,14 @@ func senderChecker(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer,
 		account, ok := cfg.Accounts[peer.Username]
 		if !ok {
 			// Shouldn't happen: authChecker already validated username+password
-			log.WithField("username", peer.Username).
-				Warn("could not find account")
-
-			return smtpd.Error{Code: 451, Message: "Bad sender address"}
+			return missingAccountError(log, peer.Username)
 		}
 
-		if !addressAllowedByTemplate(account.Rules.AllowedFrom, addr) {
-			log.WithField("username", peer.Username).
-				WithField("sender_address", addr).
-				Warn("sender address not allowed for authenticated user")
+		log := log.WithField("account", peer.Username)
 
-			return smtpd.Error{Code: 451, Message: "Bad sender address"}
-		}
-
-		if !addressAllowedByRegex(cfg.AllowedSender, addr) {
+		if !addressAllowedByRegex(account.Rules.AllowedSendersRegex, addr) {
 			log.WithField("sender_address", addr).
-				Warn("sender address not allowed by allowed_sender pattern")
+				Warn("sender address not allowed by allowed_senders pattern")
 
 			return smtpd.Error{Code: 451, Message: "Bad sender address"}
 		}
@@ -110,7 +105,15 @@ func senderChecker(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer,
 
 func recipientChecker(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, addr string) error {
 	return func(peer smtpd.Peer, addr string) error {
-		if !addressAllowedByRegex(cfg.AllowedRecipients, addr) {
+		account, ok := cfg.Accounts[peer.Username]
+		if !ok {
+			// Shouldn't happen: authChecker already validated username+password
+			return missingAccountError(log, peer.Username)
+		}
+
+		log := log.WithField("account", peer.Username)
+
+		if !addressAllowedByRegex(account.Rules.AllowedRecipientsRegex, addr) {
 			log.WithField("recipient_address", addr).
 				Warn("recipient address not allowed by allowed_recipients pattern")
 
@@ -211,39 +214,6 @@ func mailHandler(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, e
 
 		return nil
 	}
-}
-
-func addressAllowedByTemplate(allowedAddresses []string, addr string) bool {
-	// Extract optional domain part
-	domain := ""
-	if idx := strings.LastIndex(addr, "@"); idx != -1 {
-		domain = addr[idx+1:]
-	}
-
-	for _, allowedAddr := range allowedAddresses {
-		if allowedAddr == "*" {
-			// 0. wildcard -- all addresses are allowed
-			return true
-		} else if idx := strings.Index(allowedAddr, "@"); idx == -1 {
-			// 1. local address (no @) -- must match exactly
-			if strings.EqualFold(allowedAddr, addr) {
-				return true
-			}
-		} else if idx != 0 {
-			// 2. email address (user@domain.com) -- must match exactly
-			if strings.EqualFold(allowedAddr, addr) {
-				return true
-			}
-		} else {
-			// 3. domain (@domain.com) -- must match addr domain
-			allowedDomain := allowedAddr[idx+1:]
-			if strings.EqualFold(allowedDomain, domain) {
-				return true
-			}
-		}
-	}
-
-	return false
 }
 
 func addressAllowedByRegex(allowedRegex *regexp.Regexp, addr string) bool {

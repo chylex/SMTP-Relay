@@ -214,11 +214,6 @@ func mailHandler(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, e
 }
 
 func addressAllowedByTemplate(allowedAddresses []string, addr string) bool {
-	if allowedAddresses == nil {
-		// If absent, all addresses are allowed
-		return true
-	}
-
 	// Extract optional domain part
 	domain := ""
 	if idx := strings.LastIndex(addr, "@"); idx != -1 {
@@ -226,8 +221,10 @@ func addressAllowedByTemplate(allowedAddresses []string, addr string) bool {
 	}
 
 	for _, allowedAddr := range allowedAddresses {
-		// Three cases for allowedAddr format:
-		if idx := strings.Index(allowedAddr, "@"); idx == -1 {
+		if allowedAddr == "*" {
+			// 0. wildcard -- all addresses are allowed
+			return true
+		} else if idx := strings.Index(allowedAddr, "@"); idx == -1 {
 			// 1. local address (no @) -- must match exactly
 			if strings.EqualFold(allowedAddr, addr) {
 				return true

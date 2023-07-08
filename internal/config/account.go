@@ -120,5 +120,8 @@ func validateProtocolAndGetDefaultPort(protocol string) (uint16, error) {
 }
 
 func validateAndProcessRules(rules *Rules) error {
+	if len(rules.AllowedFrom) == 0 {
+		return fmt.Errorf("rule allowed_from must not be empty")
+	}
 	return nil
 }

@@ -4,6 +4,20 @@ import (
 	"testing"
 )
 
+func TestAddrAllowedEmpty(t *testing.T) {
+	var allowedAddrs []string
+	if addressAllowedByTemplate(allowedAddrs, "joe@abc.com") {
+		t.FailNow()
+	}
+}
+
+func TestAddrAllowedWildcard(t *testing.T) {
+	allowedAddrs := []string{"*"}
+	if !addressAllowedByTemplate(allowedAddrs, "joe@abc.com") {
+		t.FailNow()
+	}
+}
+
 func TestAddrAllowedNoDomain(t *testing.T) {
 	allowedAddrs := []string{"joe@abc.com"}
 	if addressAllowedByTemplate(allowedAddrs, "bob.com") {

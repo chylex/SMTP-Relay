@@ -126,6 +126,12 @@ func recipientChecker(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Pe
 
 func mailHandler(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, env smtpd.Envelope) error {
 	return func(peer smtpd.Peer, env smtpd.Envelope) error {
+		account, ok := cfg.Accounts[peer.Username]
+		if !ok {
+			// Shouldn't happen: authChecker already validated username+password
+			return missingAccountError(log, peer.Username)
+		}
+
 		peerIP := ""
 		if addr, ok := peer.Addr.(*net.TCPAddr); ok {
 			peerIP = addr.IP.String()
@@ -133,15 +139,25 @@ func mailHandler(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, e
 
 		env.AddReceivedLine(peer)
 
-		senderAddr := env.Sender
-		senderName := fmt.Sprintf("%s <%s>", peer.Username, senderAddr)
+		sender := env.Sender
 		recipients := env.Recipients
-		message := []byte(replaceHeaders(string(env.Data), senderName, recipients))
+
+		fromHeader := account.Rules.OverrideFrom
+		if fromHeader == "" {
+			fromHeader = fmt.Sprintf("%s <%s>", peer.Username, sender)
+		} else {
+			fromHeader = strings.NewReplacer(
+				"%s", sender,
+				"%u", peer.Username,
+			).Replace(account.Rules.OverrideFrom)
+		}
+
+		message := []byte(replaceHeaders(string(env.Data), fromHeader, recipients))
 
 		logger := log.WithFields(
 			logrus.Fields{
 				"account": peer.Username,
-				"from":    senderAddr,
+				"from":    sender,
 				"to":      recipients,
 				"uuid":    generateUUID(log),
 			},
@@ -154,7 +170,7 @@ func mailHandler(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, e
 			var stderr bytes.Buffer
 
 			environ := os.Environ()
-			environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_FROM", senderAddr))
+			environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_FROM", sender))
 			environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_TO", recipients))
 			environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_PEER", peerIP))
 
@@ -176,16 +192,10 @@ func mailHandler(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, e
 			cmdLogger.Info("pipe command successful: " + stdout.String())
 		}
 
-		account, ok := cfg.Accounts[peer.Username]
-		if !ok {
-			logger.Warning("invalid user", peer.Username)
-			return nil
-		}
-
 		logger = logger.WithField("host", account.Remote.Addr)
 		logger.Info("delivering mail from peer using smarthost")
 
-		err := SendMail(&account.Remote, *cfg.Hostname, senderAddr, recipients, message)
+		err := SendMail(&account.Remote, *cfg.Hostname, sender, recipients, message)
 		if err != nil {
 			var smtpError smtpd.Error
 

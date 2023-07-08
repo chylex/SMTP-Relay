@@ -34,6 +34,7 @@ type Rules struct {
 	AllowedSendersRegex      *regexp.Regexp `yaml:"-"`
 	AllowedRecipientsPattern string         `yaml:"allowed_recipients"`
 	AllowedRecipientsRegex   *regexp.Regexp `yaml:"-"`
+	OverrideFrom             string         `yaml:"override_from"`
 }
 
 func ReadAccountsFromFile(filePath string) (map[string]Account, error) {

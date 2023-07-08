@@ -1,116 +1,124 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
+type yamlAccountFile struct {
+	Accounts []Account `yaml:"accounts"`
+}
+
 type Account struct {
-	Username     string
-	PasswordHash []byte
-	AllowedFrom  []string
-	Remote       Remote
+	Username     string `yaml:"username"`
+	PasswordHash string `yaml:"password_hash"`
+	Remote       Remote `yaml:"remote"`
+	Rules        Rules  `yaml:"rules"`
 }
 
 type Remote struct {
-	Scheme   string
-	Hostname string
-	Port     string
-	Addr     string
-	Username string
-	Password string
+	Protocol string `yaml:"protocol"`
+	Hostname string `yaml:"hostname"`
+	Port     uint16 `yaml:"port"`
+	Addr     string `yaml:"-"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
-type AccountJson struct {
-	LocalUsername     string   `json:"localUsername"`
-	LocalPasswordHash string   `json:"localPasswordHash"`
-	RemoteHostname    string   `json:"remoteHostname"`
-	RemoteUsername    string   `json:"remoteUsername"`
-	RemotePassword    string   `json:"remotePassword"`
-	AllowedFrom       []string `json:"allowedFrom"`
+type Rules struct {
+	AllowedFrom []string `yaml:"allowed_from"`
 }
 
 func ReadAccountsFromFile(filePath string) (map[string]Account, error) {
-	var accountList []AccountJson
+	var accountList yamlAccountFile
 
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
 
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
-
-	err = decoder.Decode(&accountList)
+	err = yaml.NewDecoder(file).Decode(&accountList)
 	_ = file.Close()
 	if err != nil {
 		return nil, err
 	}
 
 	accounts := make(map[string]Account)
-	for _, account := range accountList {
-		remote, err := parseRemote(account.RemoteHostname, account.RemoteUsername, account.RemotePassword)
+	for _, account := range accountList.Accounts {
+		err := validateAndProcessAccount(&account)
 		if err != nil {
 			return nil, err
-		}
-
-		accounts[account.LocalUsername] = Account{
-			Username:     account.LocalUsername,
-			PasswordHash: []byte(account.LocalPasswordHash),
-			AllowedFrom:  account.AllowedFrom,
-			Remote:       *remote,
+		} else {
+			accounts[account.Username] = account
 		}
 	}
 
 	return accounts, nil
 }
 
-// parseRemote creates a remote from a given url in the following format:
-//
-// smtp://[host][:port]
-// smtps://[host][:port]
-// starttls://[host][:port]
-func parseRemote(remoteURL string, username string, password string) (*Remote, error) {
-	u, err := url.Parse(remoteURL)
+func validateAndProcessAccount(account *Account) error {
+	if account.Username == "" {
+		return fmt.Errorf("username must not be empty")
+	}
+
+	if account.PasswordHash == "" {
+		return fmt.Errorf("password_hash must not be empty")
+	}
+
+	err := validateAndProcessRemote(&account.Remote)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	if u.Scheme != "smtp" && u.Scheme != "smtps" && u.Scheme != "starttls" {
-		return nil, fmt.Errorf("'%s' is not a supported relay scheme", u.Scheme)
+	err = validateAndProcessRules(&account.Rules)
+	if err != nil {
+		return err
 	}
 
-	if u.User != nil {
-		return nil, fmt.Errorf("user in URL is not supported")
+	return nil
+}
+
+func validateAndProcessRemote(remote *Remote) error {
+	if remote.Hostname == "" {
+		return fmt.Errorf("remote hostname must not be empty")
 	}
 
-	if u.Path != "" {
-		return nil, fmt.Errorf("path in URL is not supported")
+	if remote.Username == "" {
+		return fmt.Errorf("remote username must not be empty")
 	}
 
-	hostname, port := u.Hostname(), u.Port()
-
-	if port == "" {
-		switch u.Scheme {
-		case "smtp":
-			port = "25"
-		case "smtps":
-			port = "465"
-		case "starttls":
-			port = "587"
-		}
+	if remote.Password == "" {
+		return fmt.Errorf("remote password must not be empty")
 	}
 
-	r := &Remote{
-		Scheme:   u.Scheme,
-		Hostname: hostname,
-		Port:     port,
-		Addr:     fmt.Sprintf("%s:%s", hostname, port),
-		Username: username,
-		Password: password,
+	defaultPort, err := validateProtocolAndGetDefaultPort(remote.Protocol)
+	if err != nil {
+		return err
 	}
 
-	return r, nil
+	if remote.Port == 0 {
+		remote.Port = defaultPort
+	}
+
+	remote.Addr = fmt.Sprintf("%s:%d", remote.Hostname, remote.Port)
+	return nil
+}
+
+func validateProtocolAndGetDefaultPort(protocol string) (uint16, error) {
+	switch protocol {
+	case "smtp":
+		return 25, nil
+	case "smtps":
+		return 465, nil
+	case "starttls":
+		return 587, nil
+	default:
+		return 0, fmt.Errorf("unknown remote protocol: %s", protocol)
+	}
+}
+
+func validateAndProcessRules(rules *Rules) error {
+	return nil
 }

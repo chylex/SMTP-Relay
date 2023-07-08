@@ -335,7 +335,7 @@ func SendMail(remote *config.Remote, localName string, from string, to []string,
 	}
 	var c *Client
 	var err error
-	if remote.Scheme == "smtps" {
+	if remote.Protocol == "smtps" {
 		tlsConfig := &tls.Config{
 			ServerName:         remote.Hostname,
 			InsecureSkipVerify: false,
@@ -372,7 +372,7 @@ func SendMail(remote *config.Remote, localName string, from string, to []string,
 			if err = c.StartTLS(tlsConfig); err != nil {
 				return err
 			}
-		} else if remote.Scheme == "starttls" {
+		} else if remote.Protocol == "starttls" {
 			return errors.New("starttls: server does not support extension, check remote scheme")
 		}
 	}

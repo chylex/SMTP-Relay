@@ -44,7 +44,7 @@ func authChecker(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer, u
 			return smtpd.Error{Code: 535, Message: "Authentication credentials invalid"}
 		}
 
-		if bcrypt.CompareHashAndPassword(account.PasswordHash, []byte(password)) != nil {
+		if bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(password)) != nil {
 			log.WithField("username", username).
 				Warn("invalid password")
 
@@ -89,7 +89,7 @@ func senderChecker(cfg *config.Config, log *logrus.Logger) func(peer smtpd.Peer,
 			return smtpd.Error{Code: 451, Message: "Bad sender address"}
 		}
 
-		if !addressAllowedByTemplate(account.AllowedFrom, addr) {
+		if !addressAllowedByTemplate(account.Rules.AllowedFrom, addr) {
 			log.WithField("username", peer.Username).
 				WithField("sender_address", addr).
 				Warn("sender address not allowed for authenticated user")
